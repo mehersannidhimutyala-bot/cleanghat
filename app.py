@@ -318,6 +318,71 @@ get_initialized_db()
 def get_active_locations():
     with db() as c:
         return [dict(x) for x in c.execute('SELECT * FROM locations WHERE active=1 ORDER BY zone, name').fetchall()]
+
+
+@st.cache_data(ttl=5)
+def get_admin_data():
+    with db() as c:
+        reports_df = pd.read_sql_query('''
+            SELECT r.*,
+                COALESCE(l.name, 'Custom: ' || r.location_text, 'Custom location') AS location_name,
+                COALESCE(l.zone, r.assigned_zone, 'Unassigned') AS zone,
+                COALESCE(l.area_type, 'Custom') AS area_type
+            FROM reports r
+            LEFT JOIN locations l ON l.id = r.location_id
+            ORDER BY r.created_at DESC
+        ''', c)
+
+        tasks_df = pd.read_sql_query('''
+            SELECT ta.*, r.ticket, r.category,
+                COALESCE(l.name, 'Custom: ' || r.location_text, 'Custom location') AS location_name,
+                t.name AS team_name, w.name AS worker_name
+            FROM tasks ta
+            JOIN reports r ON r.id = ta.report_id
+            LEFT JOIN locations l ON l.id = r.location_id
+            LEFT JOIN teams t ON t.id = ta.team_id
+            LEFT JOIN workers w ON w.id = ta.worker_id
+            ORDER BY ta.assigned_at DESC
+        ''', c)
+
+        teams_df = pd.read_sql_query('SELECT * FROM teams', c)
+        workers_df = pd.read_sql_query('''
+            SELECT w.name AS worker_name, w.worker_code, t.name AS team_name,
+                   COUNT(ta.id) AS tasks_completed
+            FROM workers w
+            JOIN teams t ON t.id = w.team_id
+            LEFT JOIN tasks ta ON ta.worker_id = w.id AND ta.status = 'COMPLETED'
+            GROUP BY w.id, w.name, w.worker_code, t.name
+            ORDER BY tasks_completed DESC, w.id ASC
+        ''', c)
+
+    return reports_df, tasks_df, teams_df, workers_df
+
+
+@st.cache_data(ttl=5)
+def get_all_reports_log():
+    with db() as c:
+        return pd.read_sql_query('''
+            SELECT 
+                r.ticket AS [Ticket ID],
+                r.category AS [Category],
+                r.priority AS [Priority],
+                r.status AS [Status],
+                COALESCE(l.name, 'Custom: ' || r.location_text, 'Custom location') AS [Location / Landmark],
+                COALESCE(l.zone, r.assigned_zone, 'Unassigned') AS [Zone],
+                r.created_at AS [Reported At],
+                t.name AS [Assigned Team],
+                w.name AS [Assigned Worker],
+                ta.assigned_at AS [Assigned At],
+                ta.started_at AS [Started At],
+                ta.completed_at AS [Completed At]
+            FROM reports r
+            LEFT JOIN locations l ON l.id = r.location_id
+            LEFT JOIN tasks ta ON ta.report_id = r.id
+            LEFT JOIN teams t ON t.id = ta.team_id
+            LEFT JOIN workers w ON w.id = ta.worker_id
+            ORDER BY r.created_at DESC
+        ''', c)
 params = st.query_params
 page_param = params.get('page','').lower()
 qr_param = params.get('location','')
@@ -1062,40 +1127,7 @@ elif page == 'Admin dashboard':
     </div>
     ''', unsafe_allow_html=True)
 
-    with db() as c:
-        # Load comprehensive reports dataset
-        reports = pd.read_sql_query('''
-            SELECT r.*,
-                COALESCE(l.name, 'Custom: ' || r.location_text, 'Custom location') AS location_name,
-                COALESCE(l.zone, r.assigned_zone, 'Unassigned') AS zone,
-                COALESCE(l.area_type, 'Custom') AS area_type
-            FROM reports r
-            LEFT JOIN locations l ON l.id = r.location_id
-            ORDER BY r.created_at DESC
-        ''', c)
-
-        tasks = pd.read_sql_query('''
-            SELECT ta.*, r.ticket, r.category,
-                COALESCE(l.name, 'Custom: ' || r.location_text, 'Custom location') AS location_name,
-                t.name AS team_name, w.name AS worker_name
-            FROM tasks ta
-            JOIN reports r ON r.id = ta.report_id
-            LEFT JOIN locations l ON l.id = r.location_id
-            LEFT JOIN teams t ON t.id = ta.team_id
-            LEFT JOIN workers w ON w.id = ta.worker_id
-            ORDER BY ta.assigned_at DESC
-        ''', c)
-
-        teams_df = pd.read_sql_query('SELECT * FROM teams', c)
-        workers_df = pd.read_sql_query('''
-            SELECT w.name AS worker_name, w.worker_code, t.name AS team_name,
-                   COUNT(ta.id) AS tasks_completed
-            FROM workers w
-            JOIN teams t ON t.id = w.team_id
-            LEFT JOIN tasks ta ON ta.worker_id = w.id AND ta.status = 'COMPLETED'
-            GROUP BY w.id, w.name, w.worker_code, t.name
-            ORDER BY tasks_completed DESC, w.id ASC
-        ''', c)
+    reports, tasks, teams_df, workers_df = get_admin_data()
 
     # High-level KPIs
     total = len(reports)
@@ -1243,6 +1275,7 @@ elif page == 'Admin dashboard':
                                     task_id = c.execute('SELECT id FROM tasks WHERE report_id=?', (u_rep['id'],)).fetchone()['id']
                                     c.execute('UPDATE teams SET available=0 WHERE id=?', (manual_team['id'],))
                                 history(u_rep['id'], task_id, 'VERIFICATION_REQUIRED', 'ASSIGNED', f"supervisor-manual-to-{manual_team['name']}")
+                                st.cache_data.clear()
                                 st.success(f"Assigned directly to {manual_team['name']}!")
                                 st.rerun()
                         else:
@@ -1253,28 +1286,7 @@ elif page == 'Admin dashboard':
         st.subheader("📋 Comprehensive Cleanliness Reports Log")
         st.caption("Full audit record of every citizen complaint, exact location, timestamps, dispatch assignment and completion evidence.")
 
-        with db() as c:
-            all_reports_df = pd.read_sql_query('''
-                SELECT 
-                    r.ticket AS [Ticket ID],
-                    r.category AS [Category],
-                    r.priority AS [Priority],
-                    r.status AS [Status],
-                    COALESCE(l.name, 'Custom: ' || r.location_text, 'Custom location') AS [Location / Landmark],
-                    COALESCE(l.zone, r.assigned_zone, 'Unassigned') AS [Zone],
-                    r.created_at AS [Reported At],
-                    t.name AS [Assigned Team],
-                    w.name AS [Assigned Worker],
-                    ta.assigned_at AS [Assigned At],
-                    ta.started_at AS [Started At],
-                    ta.completed_at AS [Completed At]
-                FROM reports r
-                LEFT JOIN locations l ON l.id = r.location_id
-                LEFT JOIN tasks ta ON ta.report_id = r.id
-                LEFT JOIN teams t ON t.id = ta.team_id
-                LEFT JOIN workers w ON w.id = ta.worker_id
-                ORDER BY r.created_at DESC
-            ''', c)
+        all_reports_df = get_all_reports_log()
 
         if len(all_reports_df):
             # Interactive filter row
@@ -1409,32 +1421,62 @@ elif page == 'Admin dashboard':
         st.subheader("🔳 Location-Specific QR Code Centre")
         st.caption("Generate, preview, and download QR codes for every pre-registered Pushkaralu ghat, riverbank step, and approach road. Scanning these codes opens the mobile citizen reporting portal with the location pre-filled.")
 
-        base_url = st.text_input('Application Public Base URL', value=os.getenv('CLEANGHAT_BASE_URL', 'http://localhost:8501'), key="admin_qr_base_url")
-        st.caption('ℹ️ Note: Default localhost URL is for local browser testing. Enter the deployed public HTTPS URL before printing QR posters for the festival.')
+        default_url = os.getenv('CLEANGHAT_BASE_URL', 'https://cleanghat-pushkaralu.streamlit.app')
+        base_url = st.text_input('Application Public Base URL', value=default_url, key="admin_qr_base_url")
+        st.caption('ℹ️ Base URL used when encoding QR posters for the festival.')
 
         locations = get_active_locations()
 
-        qr_cols = st.columns(2)
-        for idx, loc in enumerate(locations):
-            with qr_cols[idx % 2]:
-                with st.container(border=True):
-                    qr_bytes, url = make_qr(loc['qr_code'], base_url)
-                    qc1, qc2 = st.columns([2, 1])
-                    with qc1:
-                        st.markdown(f"#### {loc['name']}")
-                        st.write(f"🏷️ Code: `{loc['qr_code']}` · 🚩 Zone: **{loc['zone']}**")
-                        st.caption(f"Area Type: {loc['area_type']} · GPS: ({loc['lat']:.4f}, {loc['lon']:.4f})")
-                        st.caption(f"Target URL: `{url}`")
-                        st.download_button(
-                            f"⬇️ Download {loc['qr_code']}.png",
-                            data=qr_bytes,
-                            file_name=f"{loc['qr_code']}.png",
-                            mime='image/png',
-                            key=f"adm_qr_btn_{loc['id']}",
-                            use_container_width=True
-                        )
-                    with qc2:
-                        st.image(qr_bytes, caption="Scan with Phone", width=140)
+        selected_loc_name = st.selectbox(
+            "📍 Select Ghat / Location to Preview & Download Poster:",
+            [f"{loc['name']} ({loc['qr_code']}) — {loc['zone']}" for loc in locations],
+            index=0,
+            key="admin_qr_selector"
+        )
+        selected_loc = locations[[f"{loc['name']} ({loc['qr_code']}) — {loc['zone']}" for loc in locations].index(selected_loc_name)]
+
+        with st.container(border=True):
+            qr_bytes, url = make_qr(selected_loc['qr_code'], base_url)
+            qc1, qc2 = st.columns([2, 1])
+            with qc1:
+                st.markdown(f"### {selected_loc['name']}")
+                st.write(f"🏷️ Code: `{selected_loc['qr_code']}` · 🚩 Zone: **{selected_loc['zone']}**")
+                st.caption(f"Area Type: {selected_loc['area_type']} · GPS: ({selected_loc['lat']:.4f}, {selected_loc['lon']:.4f})")
+                st.write("🔗 **Target Reporting URL:**")
+                st.code(url, language="text")
+                st.download_button(
+                    f"⬇️ Download {selected_loc['qr_code']} Poster (PNG)",
+                    data=qr_bytes,
+                    file_name=f"{selected_loc['qr_code']}.png",
+                    mime='image/png',
+                    key=f"adm_qr_btn_main_{selected_loc['id']}",
+                    type="primary",
+                    use_container_width=True
+                )
+            with qc2:
+                st.image(qr_bytes, caption=f"Scan to Report at {selected_loc['name']}", width=180)
+
+        with st.expander("📂 View All 10 Ghat QR Codes At Once", expanded=False):
+            st.caption("All 10 festival zones & master ghats:")
+            qr_cols = st.columns(2)
+            for idx, loc in enumerate(locations):
+                with qr_cols[idx % 2]:
+                    with st.container(border=True):
+                        q_bytes, u = make_qr(loc['qr_code'], base_url)
+                        c1, c2 = st.columns([2, 1])
+                        with c1:
+                            st.markdown(f"**{loc['name']}**")
+                            st.caption(f"`{loc['qr_code']}` · {loc['zone']}")
+                            st.download_button(
+                                f"⬇️ {loc['qr_code']}.png",
+                                data=q_bytes,
+                                file_name=f"{loc['qr_code']}.png",
+                                mime='image/png',
+                                key=f"adm_qr_grid_{loc['id']}",
+                                use_container_width=True
+                            )
+                        with c2:
+                            st.image(q_bytes, width=110)
 
 else:
     st.markdown('''
