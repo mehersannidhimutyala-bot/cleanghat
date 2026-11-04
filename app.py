@@ -1,4 +1,5 @@
 import os, sqlite3, math, uuid, io
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
@@ -184,10 +185,15 @@ CATEGORIES = ['overflow','litter','accumulation','river','dirty','other']
 CATEGORY_EN = {'overflow':'Overflowing bin','litter':'Litter on ground','accumulation':'Waste accumulation','river':'Garbage near riverbank','dirty':'Dirty public area','other':'Other cleanliness issue'}
 
 
+@contextmanager
 def db():
     conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30)
     conn.row_factory = sqlite3.Row
-    return conn
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
 
 
 def init_db():
@@ -320,7 +326,6 @@ def get_active_locations():
         return [dict(x) for x in c.execute('SELECT * FROM locations WHERE active=1 ORDER BY zone, name').fetchall()]
 
 
-@st.cache_data(ttl=5)
 def get_admin_data():
     with db() as c:
         reports_df = pd.read_sql_query('''
@@ -359,7 +364,6 @@ def get_admin_data():
     return reports_df, tasks_df, teams_df, workers_df
 
 
-@st.cache_data(ttl=5)
 def get_all_reports_log():
     with db() as c:
         return pd.read_sql_query('''

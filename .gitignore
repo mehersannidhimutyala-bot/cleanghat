@@ -9,9 +9,10 @@ __pycache__/
 venv/
 ENV/
 
-# Local testing uploads (keep directory with .gitkeep)
+# Local testing uploads (preserve gitkeep and clean demo photos)
 uploads/*
 !uploads/.gitkeep
+!uploads/demo_*.jpg
 
 # Operating system
 .DS_Store
