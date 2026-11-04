@@ -67,7 +67,9 @@ I18N = {
      'river': 'Garbage near riverbank',
      'dirty': 'Dirty public area',
      'other': 'Other cleanliness issue',
-     'no_location': 'QR location not recognised. Please choose a location from the list.'
+     'no_location': 'QR location not recognised. Please choose a location from the list.',
+     'submit_another': '➕ Submit Another Complaint',
+     'copy_ticket_note': 'Please note down or screenshot this ticket number to track cleaning progress.'
  },
  'te': {
      'title': 'క్లీన్‌ఘాట్',
@@ -119,7 +121,9 @@ I18N = {
      'river': 'నది ఒడ్డున చెత్త',
      'dirty': 'అపరిశుభ్రమైన బహిరంగ ప్రదేశం',
      'other': 'ఇతర పరిశుభ్రత సమస్య',
-     'no_location': 'QR ప్రదేశం గుర్తించబడలేదు. దయచేసి జాబితా నుండి ఎంచుకోండి.'
+     'no_location': 'QR ప్రదేశం గుర్తించబడలేదు. దయచేసి జాబితా నుండి ఎంచుకోండి.',
+     'submit_another': '➕ మరొక ఫిర్యాదును నమోదు చేయండి',
+     'copy_ticket_note': 'పరిశుభ్రత పురోగతిని తెలుసుకోవడానికి దయచేసి ఈ టికెట్ నంబర్‌ను భద్రపరుచుకోండి.'
  },
  'hi': {
      'title': 'क्लीनघाट',
@@ -171,7 +175,9 @@ I18N = {
      'river': 'नदी किनारे कचरा',
      'dirty': 'गंदा सार्वजनिक क्षेत्र',
      'other': 'अन्य स्वच्छता समस्या',
-     'no_location': 'QR स्थान पहचाना नहीं गया। कृपया सूची से स्थान चुनें।'
+     'no_location': 'QR स्थान पहचाना नहीं गया। कृपया सूची से स्थान चुनें।',
+     'submit_another': '➕ दूसरी शिकायत दर्ज करें',
+     'copy_ticket_note': 'सफाई की प्रगति देखने के लिए कृपया इस टिकट नंबर को नोट कर लें।'
  }
 }
 CATEGORIES = ['overflow','litter','accumulation','river','dirty','other']
@@ -544,150 +550,182 @@ if page == 'Citizen portal':
     tab_report, tab_track = st.tabs([t['tab_report'], t['tab_track']])
 
     with tab_report:
-        locations = get_active_locations()
+        if 'submitted_ticket_info' in st.session_state:
+            sub = st.session_state['submitted_ticket_info']
+            st.success(sub['success_msg'])
+            st.markdown(f'''
+            <div class="gov-card" style="border-left: 4px solid {sub['border_color']};">
+                <span class="status-badge {sub['status_class']}">{sub['status_label']}</span>
+                <h3 style="margin-top:10px; margin-bottom:8px;">{t["ticket"]}: <code style="font-size:1.25rem; color:#0e5a36;">{sub['ticket']}</code></h3>
+                <p style="font-size:0.95rem; margin-bottom:10px;">{sub['detail_msg']}</p>
+                <div style="background:#f1f5f9; padding:10px 14px; border-radius:8px; border:1px dashed #cbd5e1; margin-bottom:12px;">
+                    <p style="margin:0; font-weight:600; font-size:0.92rem;">📍 {sub['loc_title']}</p>
+                    <p style="margin:4px 0 0 0; color:#64748b; font-size:0.85rem;">🏷️ {sub['cat_title']} · 🕒 {sub['time_str']}</p>
+                </div>
+                <p style="font-size:0.88rem; color:#475569; margin:0;">ℹ️ {t['copy_ticket_note']}</p>
+            </div>
+            ''', unsafe_allow_html=True)
 
-        # Build dropdown options
-        loc_options = [f"{x['name']} ({x['qr_code']}) — {x['zone']}" for x in locations]
-        loc_options.append(t['other_loc'])
+            st.write("")
+            if st.button(t['submit_another'], type="primary", use_container_width=True):
+                del st.session_state['submitted_ticket_info']
+                st.rerun()
 
-        # Determine prefill index if scanned via QR
-        default_index = 0
-        qr_matched_loc = None
-        if qr_param:
-            qr_matched_loc = next((x for x in locations if x['qr_code'] == qr_param), None)
-            if qr_matched_loc:
-                default_index = [x['qr_code'] for x in locations].index(qr_param)
-            else:
-                st.warning(t['no_location'])
-
-        selected_option = st.selectbox(
-            t['location'],
-            loc_options,
-            index=default_index,
-            help=t['location_help']
-        )
-
-        is_custom_selected = (selected_option == t['other_loc'])
-        custom_location_text = ""
-        landmark_text = ""
-
-        if is_custom_selected:
-            st.warning(t['custom_loc_warning'])
-            custom_location_text = st.text_input(
-                t['custom_loc_desc'],
-                placeholder="e.g. Near temporary food stalls, 150m north of bathing steps"
-            )
         else:
-            chosen_loc = locations[loc_options.index(selected_option)]
-            st.info(f"📍 **{t['location']}:** {chosen_loc['name']} · {chosen_loc['zone']} · Code: `{chosen_loc['qr_code']}`")
-            landmark_text = st.text_input(
-                t['landmark'],
-                placeholder="e.g. Near bathing step #4, beside drinking water kiosk"
+            locations = get_active_locations()
+
+            # Build dropdown options
+            loc_options = [f"{x['name']} ({x['qr_code']}) — {x['zone']}" for x in locations]
+            loc_options.append(t['other_loc'])
+
+            # Determine prefill index if scanned via QR
+            default_index = 0
+            qr_matched_loc = None
+            if qr_param:
+                qr_matched_loc = next((x for x in locations if x['qr_code'] == qr_param), None)
+                if qr_matched_loc:
+                    default_index = [x['qr_code'] for x in locations].index(qr_param)
+                else:
+                    st.warning(t['no_location'])
+
+            selected_option = st.selectbox(
+                t['location'],
+                loc_options,
+                index=default_index,
+                help=t['location_help']
             )
 
-        # Waste Issue Category (strictly PS-07)
-        cat_label = st.selectbox(t['category'], [t[x] for x in CATEGORIES])
-        cat_key = CATEGORIES[[t[x] for x in CATEGORIES].index(cat_label)]
+            is_custom_selected = (selected_option == t['other_loc'])
+            custom_location_text = ""
+            landmark_text = ""
 
-        description = st.text_area(t['description'], max_chars=500, placeholder="Describe waste accumulation, size, or urgency...")
-        photo = st.file_uploader(t['photo'], type=['jpg', 'jpeg', 'png'], help="Upload photographic evidence of waste or litter")
-        contact = st.text_input(t['contact'], max_chars=15, placeholder="e.g. 9876543210")
-        st.caption(t['contact_privacy'])
-
-        submitted = st.button(t['submit'], type="primary", use_container_width=True)
-
-        if submitted:
-            if is_custom_selected and not custom_location_text.strip():
-                st.error(t.get('custom_loc_required_err', "Location description is compulsory when selecting 'Other / Not listed'."))
+            if is_custom_selected:
+                st.warning(t['custom_loc_warning'])
+                custom_location_text = st.text_input(
+                    t['custom_loc_desc'],
+                    placeholder="e.g. Near temporary food stalls, 150m north of bathing steps"
+                )
             else:
-                reporter_photo = save_upload(photo, 'report')
-                ticket = 'CG-' + datetime.now().strftime('%y%m%d') + '-' + uuid.uuid4().hex[:6].upper()
-                priority = {'overflow': 45, 'litter': 25, 'accumulation': 35, 'river': 65, 'dirty': 25, 'other': 20}[cat_key]
+                chosen_loc = locations[loc_options.index(selected_option)]
+                st.info(f"📍 **{t['location']}:** {chosen_loc['name']} · {chosen_loc['zone']} · Code: `{chosen_loc['qr_code']}`")
+                landmark_text = st.text_input(
+                    t['landmark'],
+                    placeholder="e.g. Near bathing step #4, beside drinking water kiosk"
+                )
 
-                if is_custom_selected:
-                    # CUSTOM LOCATION WORKFLOW:
-                    # Status is VERIFICATION_REQUIRED.
-                    # NEVER auto-assign a team.
-                    with db() as c:
-                        c.execute('''
-                            INSERT INTO reports(
-                                ticket, location_id, location_text, is_custom_location,
-                                qr_source_location_id, category, description, language,
-                                contact, reporter_photo, priority, status, created_at
-                            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
-                        ''', (
-                            ticket, None, custom_location_text.strip(), 1,
-                            (qr_matched_loc['id'] if qr_matched_loc else None),
-                            cat_key, description.strip(), lang_code,
-                            contact.strip() or None, reporter_photo, priority,
-                            'VERIFICATION_REQUIRED', datetime.now().isoformat(timespec='seconds')
-                        ))
-                        report_id = c.execute('SELECT id FROM reports WHERE ticket=?', (ticket,)).fetchone()['id']
+            # Waste Issue Category (strictly PS-07)
+            cat_label = st.selectbox(t['category'], [t[x] for x in CATEGORIES])
+            cat_key = CATEGORIES[[t[x] for x in CATEGORIES].index(cat_label)]
 
-                    history(report_id, None, None, 'VERIFICATION_REQUIRED', 'citizen-custom-location')
+            description = st.text_area(t['description'], max_chars=500, placeholder="Describe waste accumulation, size, or urgency...")
+            photo = st.file_uploader(t['photo'], type=['jpg', 'jpeg', 'png'], help="Upload photographic evidence of waste or litter")
+            contact = st.text_input(t['contact'], max_chars=15, placeholder="e.g. 9876543210")
+            st.caption(t['contact_privacy'])
 
-                    st.success(t['success_custom'])
-                    st.markdown(f'''
-                    <div class="gov-card" style="border-left: 4px solid #f59e0b;">
-                        <span class="status-badge status-verif">{t["status_verification"]}</span>
-                        <h3 style="margin-top:8px;">{t["ticket"]}: <code>{ticket}</code></h3>
-                        <p>{t["custom_submitted_msg"]}</p>
-                        <p style="font-size:0.88rem; color:#64748b; margin:0;">Save this ticket number to track supervisor review and cleaning progress.</p>
-                    </div>
-                    ''', unsafe_allow_html=True)
+            submitted = st.button(t['submit'], type="primary", use_container_width=True)
 
+            if submitted:
+                if is_custom_selected and not custom_location_text.strip():
+                    st.error(t.get('custom_loc_required_err', "Location description is compulsory when selecting 'Other / Not listed'."))
                 else:
-                    # REGISTERED LOCATION WORKFLOW:
-                    # Status starts as PENDING, auto-allocation is attempted.
-                    with db() as c:
-                        c.execute('''
-                            INSERT INTO reports(
-                                ticket, location_id, location_text, is_custom_location,
-                                qr_source_location_id, category, description, language,
-                                contact, reporter_photo, priority, status, created_at
-                            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
-                        ''', (
-                            ticket, chosen_loc['id'], landmark_text.strip() or None, 0,
-                            (chosen_loc['id'] if qr_param else None),
-                            cat_key, description.strip(), lang_code,
-                            contact.strip() or None, reporter_photo, priority,
-                            'PENDING', datetime.now().isoformat(timespec='seconds')
-                        ))
-                        report_id = c.execute('SELECT id FROM reports WHERE ticket=?', (ticket,)).fetchone()['id']
+                    reporter_photo = save_upload(photo, 'report')
+                    ticket = 'CG-' + datetime.now().strftime('%y%m%d') + '-' + uuid.uuid4().hex[:6].upper()
+                    priority = {'overflow': 45, 'litter': 25, 'accumulation': 35, 'river': 65, 'dirty': 25, 'other': 20}[cat_key]
 
-                    team_id, distance = allocate_team(chosen_loc['id'])
-                    if team_id:
+                    if is_custom_selected:
+                        # CUSTOM LOCATION WORKFLOW:
+                        # Status is VERIFICATION_REQUIRED.
+                        # NEVER auto-assign a team.
                         with db() as c:
-                            c.execute('INSERT INTO tasks(report_id,team_id,status,assigned_at,distance_m) VALUES(?,?,?,?,?)',
-                                (report_id, team_id, 'ASSIGNED', datetime.now().isoformat(timespec='seconds'), distance))
-                            task_id = c.execute('SELECT id FROM tasks WHERE report_id=?', (report_id,)).fetchone()['id']
-                            c.execute("UPDATE reports SET status='ASSIGNED' WHERE id=?", (report_id,))
-                            team_name = c.execute('SELECT name FROM teams WHERE id=?', (team_id,)).fetchone()['name']
-                        history(report_id, task_id, 'PENDING', 'ASSIGNED', 'dispatch-engine')
+                            c.execute('''
+                                INSERT INTO reports(
+                                    ticket, location_id, location_text, is_custom_location,
+                                    qr_source_location_id, category, description, language,
+                                    contact, reporter_photo, priority, status, created_at
+                                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+                            ''', (
+                                ticket, None, custom_location_text.strip(), 1,
+                                (qr_matched_loc['id'] if qr_matched_loc else None),
+                                cat_key, description.strip(), lang_code,
+                                contact.strip() or None, reporter_photo, priority,
+                                'VERIFICATION_REQUIRED', datetime.now().isoformat(timespec='seconds')
+                            ))
+                            report_id = c.execute('SELECT id FROM reports WHERE ticket=?', (ticket,)).fetchone()['id']
 
-                        st.success(t['success_verified'])
-                        st.markdown(f'''
-                        <div class="gov-card" style="border-left: 4px solid #0e5a36;">
-                            <span class="status-badge status-assign">{t["status_assigned"]}</span>
-                            <h3 style="margin-top:8px;">{t["ticket"]}: <code>{ticket}</code></h3>
-                            <p>🚚 <b>{t["assigned_to"]}:</b> {team_name} · <b>{distance:.0f}m</b> ({t["est_distance"]})</p>
-                            <p style="font-size:0.88rem; color:#64748b; margin:0;">Please save your ticket ID to check cleaning status and photo evidence.</p>
-                        </div>
-                        ''', unsafe_allow_html=True)
+                        history(report_id, None, None, 'VERIFICATION_REQUIRED', 'citizen-custom-location')
+
+                        st.session_state['submitted_ticket_info'] = {
+                            'ticket': ticket,
+                            'success_msg': t['success_custom'],
+                            'status_label': t['status_verification'],
+                            'status_class': 'status-verif',
+                            'border_color': '#f59e0b',
+                            'detail_msg': t['custom_submitted_msg'],
+                            'loc_title': f"{t['other_loc']}: {custom_location_text.strip()}",
+                            'cat_title': CATEGORY_EN.get(cat_key, cat_key),
+                            'time_str': datetime.now().strftime('%d %b %Y, %I:%M %p')
+                        }
+                        st.session_state['recent_ticket'] = ticket
+                        st.rerun()
+
                     else:
-                        st.warning(t['no_team_avail'])
-                        st.markdown(f'''
-                        <div class="gov-card" style="border-left: 4px solid #94a3b8;">
-                            <span class="status-badge status-pend">{t["status_pending"]}</span>
-                            <h3 style="margin-top:8px;">{t["ticket"]}: <code>{ticket}</code></h3>
-                            <p style="font-size:0.88rem; color:#64748b; margin:0;">Please save your ticket ID to check cleaning status.</p>
-                        </div>
-                        ''', unsafe_allow_html=True)
+                        # REGISTERED LOCATION WORKFLOW:
+                        # Status starts as PENDING, auto-allocation is attempted.
+                        with db() as c:
+                            c.execute('''
+                                INSERT INTO reports(
+                                    ticket, location_id, location_text, is_custom_location,
+                                    qr_source_location_id, category, description, language,
+                                    contact, reporter_photo, priority, status, created_at
+                                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+                            ''', (
+                                ticket, chosen_loc['id'], landmark_text.strip() or None, 0,
+                                (chosen_loc['id'] if qr_param else None),
+                                cat_key, description.strip(), lang_code,
+                                contact.strip() or None, reporter_photo, priority,
+                                'PENDING', datetime.now().isoformat(timespec='seconds')
+                            ))
+                            report_id = c.execute('SELECT id FROM reports WHERE ticket=?', (ticket,)).fetchone()['id']
+
+                        team_id, distance = allocate_team(chosen_loc['id'])
+                        if team_id:
+                            with db() as c:
+                                c.execute('INSERT INTO tasks(report_id,team_id,status,assigned_at,distance_m) VALUES(?,?,?,?,?)',
+                                    (report_id, team_id, 'ASSIGNED', datetime.now().isoformat(timespec='seconds'), distance))
+                                task_id = c.execute('SELECT id FROM tasks WHERE report_id=?', (report_id,)).fetchone()['id']
+                                c.execute("UPDATE reports SET status='ASSIGNED' WHERE id=?", (report_id,))
+                                team_name = c.execute('SELECT name FROM teams WHERE id=?', (team_id,)).fetchone()['name']
+                            history(report_id, task_id, 'PENDING', 'ASSIGNED', 'dispatch-engine')
+
+                            detail_msg = f"🚚 <b>{t['assigned_to']}:</b> {team_name} · <b>{distance:.0f}m</b> ({t['est_distance']})"
+                            status_label = t['status_assigned']
+                            status_class = 'status-assign'
+                            border_color = '#0e5a36'
+                        else:
+                            detail_msg = t['no_team_avail']
+                            status_label = t['status_pending']
+                            status_class = 'status-pend'
+                            border_color = '#94a3b8'
+
+                        st.session_state['submitted_ticket_info'] = {
+                            'ticket': ticket,
+                            'success_msg': t['success_verified'],
+                            'status_label': status_label,
+                            'status_class': status_class,
+                            'border_color': border_color,
+                            'detail_msg': detail_msg,
+                            'loc_title': f"{chosen_loc['name']} ({chosen_loc['zone']})",
+                            'cat_title': CATEGORY_EN.get(cat_key, cat_key),
+                            'time_str': datetime.now().strftime('%d %b %Y, %I:%M %p')
+                        }
+                        st.session_state['recent_ticket'] = ticket
+                        st.rerun()
 
     with tab_track:
         st.markdown(f"#### {t['ticket_lookup_title']}")
         st.caption(t['ticket_lookup_prompt'])
-        search_ticket = st.text_input(t['ticket_placeholder'], max_chars=35, placeholder="e.g. CG-261103-XXXXXX").strip().upper()
+        prefill_ticket = st.session_state.get('recent_ticket', '')
+        search_ticket = st.text_input(t['ticket_placeholder'], value=prefill_ticket, max_chars=35, placeholder="e.g. CG-261103-XXXXXX").strip().upper()
 
         if st.button(t['track_button'], use_container_width=True, type="primary"):
             if not search_ticket:
