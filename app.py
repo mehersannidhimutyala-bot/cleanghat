@@ -1425,9 +1425,24 @@ elif page == 'Admin dashboard':
         st.subheader("🔳 Location-Specific QR Code Centre")
         st.caption("Generate, preview, and download QR codes for every pre-registered Pushkaralu ghat, riverbank step, and approach road. Scanning these codes opens the mobile citizen reporting portal with the location pre-filled.")
 
-        default_url = os.getenv('CLEANGHAT_BASE_URL', 'https://cleanghat-pushkaralu.streamlit.app')
-        base_url = st.text_input('Application Public Base URL', value=default_url, key="admin_qr_base_url")
-        st.caption('ℹ️ Base URL used when encoding QR posters for the festival.')
+        live_cloud_url = os.getenv('CLEANGHAT_BASE_URL', 'https://cleanghat-pushkaralu.streamlit.app')
+        # Automatically upgrade stale localhost session state to live cloud url
+        if st.session_state.get("admin_qr_base_url") in [None, "http://localhost:8501", "http://localhost:8501/"]:
+            st.session_state["admin_qr_base_url"] = live_cloud_url
+
+        base_url = st.text_input(
+            'Application Public Base URL (Encoded in QR Posters)',
+            value=st.session_state.get("admin_qr_base_url", live_cloud_url),
+            key="admin_qr_base_url"
+        ).strip().rstrip('/')
+
+        if "localhost" in base_url or "127.0.0.1" in base_url:
+            st.warning("⚠️ Notice: Base URL is set to 'localhost'. Mobile phones cannot open localhost links. Click below to use the live deployed URL.")
+            if st.button("🌐 Switch to Live Deployed URL (cleanghat-pushkaralu.streamlit.app)", type="primary"):
+                st.session_state["admin_qr_base_url"] = live_cloud_url
+                st.rerun()
+        else:
+            st.success(f"📱 Phone-Ready QR Target: `{base_url}/?page=report&location=...`")
 
         locations = get_active_locations()
 
