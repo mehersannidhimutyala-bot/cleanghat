@@ -1,4 +1,4 @@
-import os, sqlite3, math, uuid, io
+import os, sqlite3, math, uuid, io, base64
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -189,6 +189,7 @@ CATEGORY_EN = {'overflow':'Overflowing bin','litter':'Litter on ground','accumul
 def db():
     conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30)
     conn.row_factory = sqlite3.Row
+    conn.execute('PRAGMA busy_timeout=5000')
     try:
         with conn:
             yield conn
@@ -1456,6 +1457,7 @@ elif page == 'Admin dashboard':
 
         with st.container(border=True):
             qr_bytes, url = make_qr(selected_loc['qr_code'], base_url)
+            b64_main = base64.b64encode(qr_bytes).decode('ascii')
             qc1, qc2 = st.columns([2, 1])
             with qc1:
                 st.markdown(f"### {selected_loc['name']}")
@@ -1473,7 +1475,12 @@ elif page == 'Admin dashboard':
                     use_container_width=True
                 )
             with qc2:
-                st.image(qr_bytes, caption=f"Scan to Report at {selected_loc['name']}", width=180)
+                st.markdown(f'''
+                <div style="text-align:center; padding:10px; background:#ffffff; border-radius:10px; border:2px solid #0e5a36; box-shadow:0 3px 8px rgba(0,0,0,0.08);">
+                    <img src="data:image/png;base64,{b64_main}" width="180" style="display:block; margin:0 auto; border-radius:4px;">
+                    <p style="margin:8px 0 0 0; font-size:0.82rem; font-weight:600; color:#0e5a36;">📷 Point Phone Camera to Scan</p>
+                </div>
+                ''', unsafe_allow_html=True)
 
         with st.expander("📂 View All 10 Ghat QR Codes At Once", expanded=False):
             st.caption("All 10 festival zones & master ghats:")
@@ -1482,6 +1489,7 @@ elif page == 'Admin dashboard':
                 with qr_cols[idx % 2]:
                     with st.container(border=True):
                         q_bytes, u = make_qr(loc['qr_code'], base_url)
+                        b64_g = base64.b64encode(q_bytes).decode('ascii')
                         c1, c2 = st.columns([2, 1])
                         with c1:
                             st.markdown(f"**{loc['name']}**")
@@ -1495,7 +1503,11 @@ elif page == 'Admin dashboard':
                                 use_container_width=True
                             )
                         with c2:
-                            st.image(q_bytes, width=110)
+                            st.markdown(f'''
+                            <div style="text-align:center; padding:6px; background:#ffffff; border-radius:6px; border:1px solid #cbd5e1;">
+                                <img src="data:image/png;base64,{b64_g}" width="100" style="display:block; margin:0 auto;">
+                            </div>
+                            ''', unsafe_allow_html=True)
 
 else:
     st.markdown('''
