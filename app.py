@@ -1,4 +1,4 @@
-import os, sqlite3, math, uuid
+import os, sqlite3, math, uuid, io
 from datetime import datetime
 from pathlib import Path
 
@@ -179,7 +179,7 @@ CATEGORY_EN = {'overflow':'Overflowing bin','litter':'Litter on ground','accumul
 
 
 def db():
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -291,15 +291,27 @@ def history(report_id, task_id, old, new, actor):
                   (report_id,task_id,old,new,actor,datetime.now().isoformat(timespec='seconds')))
 
 
+@st.cache_data
 def make_qr(qr_code, base_url):
     url = f'{base_url.rstrip("/")}/?page=report&location={qr_code}'
     img = qrcode.make(url)
-    path = QR_DIR / f'{qr_code}.png'
-    img.save(path)
-    return path, url
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue(), url
 
 
-init_db()
+@st.cache_resource
+def get_initialized_db():
+    init_db()
+    return True
+
+get_initialized_db()
+
+
+@st.cache_data(ttl=60)
+def get_active_locations():
+    with db() as c:
+        return [dict(x) for x in c.execute('SELECT * FROM locations WHERE active=1 ORDER BY zone, name').fetchall()]
 params = st.query_params
 page_param = params.get('page','').lower()
 qr_param = params.get('location','')
@@ -532,8 +544,7 @@ if page == 'Citizen portal':
     tab_report, tab_track = st.tabs([t['tab_report'], t['tab_track']])
 
     with tab_report:
-        with db() as c:
-            locations = c.execute('SELECT * FROM locations WHERE active=1 ORDER BY zone, name').fetchall()
+        locations = get_active_locations()
 
         # Build dropdown options
         loc_options = [f"{x['name']} ({x['qr_code']}) — {x['zone']}" for x in locations]
@@ -1087,8 +1098,8 @@ elif page == 'Admin dashboard':
         if not unverified_reports:
             st.success("🎉 All custom location reports have been verified! No unverified reports pending.")
         else:
+            reg_locations = get_active_locations()
             with db() as c:
-                reg_locations = [dict(loc) for loc in c.execute('SELECT * FROM locations WHERE active=1 ORDER BY zone, name').fetchall()]
                 avail_teams = [dict(tm) for tm in c.execute('SELECT * FROM teams WHERE active=1 AND available=1 ORDER BY name').fetchall()]
 
             for u_rep in unverified_reports:
@@ -1363,14 +1374,13 @@ elif page == 'Admin dashboard':
         base_url = st.text_input('Application Public Base URL', value=os.getenv('CLEANGHAT_BASE_URL', 'http://localhost:8501'), key="admin_qr_base_url")
         st.caption('ℹ️ Note: Default localhost URL is for local browser testing. Enter the deployed public HTTPS URL before printing QR posters for the festival.')
 
-        with db() as c:
-            locations = c.execute('SELECT * FROM locations WHERE active=1 ORDER BY zone, name').fetchall()
+        locations = get_active_locations()
 
         qr_cols = st.columns(2)
         for idx, loc in enumerate(locations):
             with qr_cols[idx % 2]:
                 with st.container(border=True):
-                    path, url = make_qr(loc['qr_code'], base_url)
+                    qr_bytes, url = make_qr(loc['qr_code'], base_url)
                     qc1, qc2 = st.columns([2, 1])
                     with qc1:
                         st.markdown(f"#### {loc['name']}")
@@ -1379,14 +1389,14 @@ elif page == 'Admin dashboard':
                         st.caption(f"Target URL: `{url}`")
                         st.download_button(
                             f"⬇️ Download {loc['qr_code']}.png",
-                            data=path.read_bytes(),
+                            data=qr_bytes,
                             file_name=f"{loc['qr_code']}.png",
                             mime='image/png',
                             key=f"adm_qr_btn_{loc['id']}",
                             use_container_width=True
                         )
                     with qc2:
-                        st.image(str(path), caption="Scan with Phone", width=140)
+                        st.image(qr_bytes, caption="Scan with Phone", width=140)
 
 else:
     st.markdown('''

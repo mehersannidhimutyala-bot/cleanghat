@@ -6,5 +6,15 @@ secondaryBackgroundColor = "#ffffff"
 textColor = "#0f172a"
 font = "sans serif"
 
+[server]
+fileWatcherType = "none"
+runOnSave = false
+enableCORS = false
+enableXsrfProtection = true
+
+[browser]
+gatherUsageStats = false
+
 [client]
 toolbarMode = "minimal"
+showErrorDetails = false
